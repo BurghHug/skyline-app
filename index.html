@@ -273,21 +273,22 @@
       justify-content:space-between;
     }
 
-    #main{ grid-template-columns:1fr; position:relative; }
-    #scope-footer{ bottom:calc(12px + 64px); }
+    #main{ grid-template-columns:1fr; grid-template-rows:minmax(0,1fr) auto; position:relative; }
+    #scope-wrap{ min-height:0; }
+    #scope-footer{ bottom:12px; }
 
     #sidebar{
-      position:fixed; left:0; right:0; bottom:0; top:auto;
-      max-height:78vh;
+      position:relative; /* not fixed — avoids iOS Safari's dynamic toolbar clipping fixed elements */
+      max-height:64px;
+      overflow:hidden;
       border-left:none; border-top:1px solid var(--line);
       border-radius:16px 16px 0 0;
       box-shadow:0 -10px 30px rgba(0,0,0,.45);
-      transform:translateY(calc(100% - 64px));
-      transition:transform .3s cubic-bezier(.32,.72,0,1);
+      transition:max-height .3s cubic-bezier(.32,.72,0,1);
       z-index:30;
       padding-bottom:env(safe-area-inset-bottom);
     }
-    #sidebar.expanded{ transform:translateY(0); }
+    #sidebar.expanded{ max-height:70vh; }
 
     #sheet-handle{
       display:flex; justify-content:center; align-items:center;
