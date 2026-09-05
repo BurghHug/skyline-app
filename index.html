@@ -2,6 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0A0D0F">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Skyline">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" href="/icon-180.png">
 <title>Skyline — live traffic scope</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -233,6 +242,70 @@
     cursor:pointer;font-size:16px;line-height:1;padding:0;
   }
   #detail-close:hover{color:var(--text-primary);}
+
+  /* ---------- mobile layout ---------- */
+  #sheet-handle{ display:none; }
+  @media (max-width:760px){
+    body{ -webkit-tap-highlight-color:transparent; }
+
+    #topbar{
+      padding:8px 10px 8px;
+      gap:6px;
+      flex-wrap:wrap;
+    }
+    .brand .sub{ display:none; }
+    #search{
+      order:3; flex:1 1 100%; max-width:none;
+      padding:10px 12px; font-size:14px; /* avoids iOS auto-zoom on focus */
+    }
+    .region-group{
+      order:2; flex:1 1 auto; min-width:0;
+      overflow-x:auto; -webkit-overflow-scrolling:touch;
+      scrollbar-width:none; padding-bottom:2px;
+    }
+    .region-group::-webkit-scrollbar{ display:none; }
+    .region-btn{
+      flex:0 0 auto; white-space:nowrap;
+      padding:9px 13px; font-size:13px;
+    }
+    #status{
+      order:4; margin-left:0; flex:1 1 100%;
+      justify-content:space-between;
+    }
+
+    #main{ grid-template-columns:1fr; position:relative; }
+    #scope-footer{ bottom:calc(12px + 64px); }
+
+    #sidebar{
+      position:fixed; left:0; right:0; bottom:0; top:auto;
+      max-height:78vh;
+      border-left:none; border-top:1px solid var(--line);
+      border-radius:16px 16px 0 0;
+      box-shadow:0 -10px 30px rgba(0,0,0,.45);
+      transform:translateY(calc(100% - 64px));
+      transition:transform .3s cubic-bezier(.32,.72,0,1);
+      z-index:30;
+      padding-bottom:env(safe-area-inset-bottom);
+    }
+    #sidebar.expanded{ transform:translateY(0); }
+
+    #sheet-handle{
+      display:flex; justify-content:center; align-items:center;
+      padding:8px 0 4px; flex-shrink:0; cursor:pointer;
+    }
+    #sheet-handle .bar{
+      width:36px; height:4px; border-radius:2px;
+      background:var(--line);
+    }
+
+    #list-head{ cursor:pointer; padding:4px 14px 10px; }
+    .flight-row{ padding:12px 14px; }
+    .flight-row .callsign{ font-size:14px; }
+    #detail-close{ padding:8px; margin:-8px -8px 0 0; font-size:18px; }
+    .dgrid .stat-val{ font-size:14.5px; }
+
+    .region-btn.locate{ padding:9px 12px; }
+  }
 </style>
 </head>
 <body>
@@ -264,6 +337,7 @@
     </div>
 
     <div id="sidebar">
+      <div id="sheet-handle"><div class="bar"></div></div>
       <div id="list-head">
         <h2>Traffic</h2>
         <span id="list-count">0</span>
@@ -349,6 +423,13 @@
     };
     regionBar.appendChild(btn);
   });
+
+  // ---------------- mobile bottom-sheet toggle ----------------
+  const sidebar = document.getElementById('sidebar');
+  function toggleSheet(){ sidebar.classList.toggle('expanded'); }
+  function expandSheet(){ sidebar.classList.add('expanded'); }
+  document.getElementById('sheet-handle').addEventListener('click', toggleSheet);
+  document.getElementById('list-head').addEventListener('click', toggleSheet);
 
   // ---------------- locate me ----------------
   const locateBtn = document.getElementById('locate-btn');
@@ -523,6 +604,7 @@
 
   function selectFlight(hex, panTo){
     selectedHex = hex;
+    expandSheet();
     const a = latestAircraft.find(x => x.hex === hex);
     renderPlanes();
     renderList();
