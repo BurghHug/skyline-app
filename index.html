@@ -280,6 +280,8 @@
           <div><div class="stat-label">Vert. rate</div><div class="stat-val" id="d-vrate">—</div></div>
           <div><div class="stat-label">Squawk</div><div class="stat-val" id="d-squawk">—</div></div>
           <div><div class="stat-label">Status</div><div class="stat-val" id="d-status">—</div></div>
+          <div style="grid-column:1/-1"><div class="stat-label">Route</div><div class="stat-val" id="d-route">—</div></div>
+          <div style="grid-column:1/-1"><div class="stat-label">Airline</div><div class="stat-val" id="d-airline">—</div></div>
         </div>
       </div>
     </div>
@@ -304,6 +306,7 @@
   let planeMarkers = {};   // hex -> marker
   let latestAircraft = []; // normalized array
   let filterText = '';
+  const routeCache = {}; // callsign -> route lookup result, so repeat clicks don't refetch
 
   // ---------------- map setup ----------------
   const map = L.map('map', { zoomControl:true, attributionControl:true })
@@ -535,11 +538,57 @@
     document.getElementById('d-squawk').textContent = a.squawk || '—';
     document.getElementById('d-status').textContent = a.alt_baro === 'ground' ? 'on ground' : 'airborne';
     if(panTo) map.panTo([a.lat, a.lon]);
+    lookupRoute((a.flight||'').trim(), hex);
+  }
+
+  function lookupRoute(callsign, forHex){
+    const dRoute = document.getElementById('d-route');
+    const dAirline = document.getElementById('d-airline');
+    if(!callsign){
+      dRoute.textContent = '—';
+      dAirline.textContent = '—';
+      return;
+    }
+    if(routeCache[callsign]){
+      applyRoute(routeCache[callsign], forHex);
+      return;
+    }
+    dRoute.textContent = 'Looking up…';
+    dAirline.textContent = 'Looking up…';
+    fetch(`/api/route?callsign=${encodeURIComponent(callsign)}`)
+      .then(r => r.json())
+      .then(data => {
+        routeCache[callsign] = data;
+        applyRoute(data, forHex);
+      })
+      .catch(()=>{
+        if(selectedHex !== forHex) return;
+        dRoute.textContent = 'Lookup failed';
+        dAirline.textContent = '—';
+      });
+  }
+
+  function applyRoute(data, forHex){
+    if(selectedHex !== forHex) return; // user selected something else while this was in flight
+    const dRoute = document.getElementById('d-route');
+    const dAirline = document.getElementById('d-airline');
+    if(!data || !data.found || !data.route){
+      dRoute.textContent = 'No route data available';
+      dAirline.textContent = '—';
+      return;
+    }
+    const r = data.route;
+    const originName = r.origin ? (r.origin.iata_code || r.origin.icao_code || r.origin.name) : null;
+    const destName = r.destination ? (r.destination.iata_code || r.destination.icao_code || r.destination.name) : null;
+    dRoute.textContent = (originName && destName) ? `${originName} → ${destName}` : 'No route data available';
+    dAirline.textContent = r.airline ? (r.airline.name || '—') : '—';
   }
 
   document.getElementById('detail-close').onclick = ()=>{
     selectedHex = null;
     document.getElementById('detail').classList.remove('open');
+    document.getElementById('d-route').textContent = '—';
+    document.getElementById('d-airline').textContent = '—';
     renderPlanes(); renderList();
   };
 
