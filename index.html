@@ -429,8 +429,34 @@
   const sidebar = document.getElementById('sidebar');
   function toggleSheet(){ sidebar.classList.toggle('expanded'); }
   function expandSheet(){ sidebar.classList.add('expanded'); }
-  document.getElementById('sheet-handle').addEventListener('click', toggleSheet);
-  document.getElementById('list-head').addEventListener('click', toggleSheet);
+  function collapseSheet(){ sidebar.classList.remove('expanded'); }
+
+  // Supports both a plain tap (toggle) and a real swipe gesture
+  // (up = open, down = close) on the handle and header.
+  let lastTouchAt = 0;
+  function attachSheetToggle(el){
+    let startY = null;
+    el.addEventListener('touchstart', e=>{
+      startY = e.touches[0].clientY;
+    }, { passive:true });
+    el.addEventListener('touchend', e=>{
+      lastTouchAt = Date.now();
+      if(startY==null) return;
+      const touch = e.changedTouches && e.changedTouches[0];
+      const endY = touch ? touch.clientY : startY;
+      const delta = endY - startY;
+      startY = null;
+      if(delta < -12) expandSheet();
+      else if(delta > 12) collapseSheet();
+      else toggleSheet();
+    });
+    el.addEventListener('click', ()=>{
+      if(Date.now() - lastTouchAt < 500) return; // avoid double-fire from the synthetic click after touchend
+      toggleSheet();
+    });
+  }
+  attachSheetToggle(document.getElementById('sheet-handle'));
+  attachSheetToggle(document.getElementById('list-head'));
 
   // ---------------- locate me ----------------
   const locateBtn = document.getElementById('locate-btn');
@@ -672,6 +698,7 @@
     document.getElementById('detail').classList.remove('open');
     document.getElementById('d-route').textContent = '—';
     document.getElementById('d-airline').textContent = '—';
+    sidebar.classList.remove('expanded'); // collapse the mobile sheet back down too
     renderPlanes(); renderList();
   };
 
