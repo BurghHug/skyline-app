@@ -220,6 +220,7 @@
     border-top:1px solid var(--line);
     padding:16px;flex-shrink:0;
     display:none;
+    overflow-y:auto; max-height:100%;
   }
   #detail.open{display:block;}
   #detail .dcall{
@@ -273,22 +274,25 @@
       justify-content:space-between;
     }
 
-    #main{ grid-template-columns:1fr; grid-template-rows:minmax(0,1fr) auto; position:relative; }
+    #main{
+      grid-template-columns:1fr;
+      grid-template-rows:minmax(0,1fr) 64px;
+      transition:grid-template-rows .3s cubic-bezier(.32,.72,0,1);
+      position:relative;
+    }
+    #main.sheet-expanded{ grid-template-rows:minmax(110px,38%) minmax(0,62%); }
     #scope-wrap{ min-height:0; }
     #scope-footer{ bottom:12px; }
 
     #sidebar{
       position:relative; /* not fixed — avoids iOS Safari's dynamic toolbar clipping fixed elements */
-      max-height:64px;
-      overflow:hidden;
+      height:100%; overflow:hidden;
       border-left:none; border-top:1px solid var(--line);
       border-radius:16px 16px 0 0;
       box-shadow:0 -10px 30px rgba(0,0,0,.45);
-      transition:max-height .3s cubic-bezier(.32,.72,0,1);
       z-index:30;
       padding-bottom:env(safe-area-inset-bottom);
     }
-    #sidebar.expanded{ max-height:70vh; }
 
     #sheet-handle{
       display:flex; justify-content:center; align-items:center;
@@ -444,7 +448,7 @@
       selectedHex = null;
       document.getElementById('detail').classList.remove('open');
       clearTrackLayers();
-      sidebar.classList.remove('expanded');
+      collapseSheet();
       fetchStates();
     };
     regionBar.appendChild(btn);
@@ -452,9 +456,23 @@
 
   // ---------------- mobile bottom-sheet toggle ----------------
   const sidebar = document.getElementById('sidebar');
-  function toggleSheet(){ sidebar.classList.toggle('expanded'); }
-  function expandSheet(){ sidebar.classList.add('expanded'); }
-  function collapseSheet(){ sidebar.classList.remove('expanded'); }
+  const mainEl = document.getElementById('main');
+  function resizeMapSoon(){ setTimeout(()=> map.invalidateSize(), 320); } // after the .3s CSS transition
+  function toggleSheet(){
+    sidebar.classList.toggle('expanded');
+    mainEl.classList.toggle('sheet-expanded', sidebar.classList.contains('expanded'));
+    resizeMapSoon();
+  }
+  function expandSheet(){
+    sidebar.classList.add('expanded');
+    mainEl.classList.add('sheet-expanded');
+    resizeMapSoon();
+  }
+  function collapseSheet(){
+    sidebar.classList.remove('expanded');
+    mainEl.classList.remove('sheet-expanded');
+    resizeMapSoon();
+  }
 
   // Supports both a plain tap (toggle) and a real swipe gesture
   // (up = open, down = close) on the handle and header.
@@ -770,7 +788,7 @@
     document.getElementById('d-airline').textContent = '—';
     document.getElementById('d-eta').textContent = '—';
     clearTrackLayers();
-    sidebar.classList.remove('expanded'); // collapse the mobile sheet back down too
+    collapseSheet(); // collapse the mobile sheet back down too
     renderPlanes(); renderList();
   };
 
