@@ -352,11 +352,10 @@
           <div><div class="stat-label">Altitude</div><div class="stat-val" id="d-alt">—</div></div>
           <div><div class="stat-label">Speed</div><div class="stat-val" id="d-speed">—</div></div>
           <div><div class="stat-label">Heading</div><div class="stat-val" id="d-heading">—</div></div>
-          <div><div class="stat-label">Vert. rate</div><div class="stat-val" id="d-vrate">—</div></div>
-          <div><div class="stat-label">Squawk</div><div class="stat-val" id="d-squawk">—</div></div>
           <div><div class="stat-label">Status</div><div class="stat-val" id="d-status">—</div></div>
           <div style="grid-column:1/-1"><div class="stat-label">Route</div><div class="stat-val" id="d-route">—</div></div>
           <div style="grid-column:1/-1"><div class="stat-label">Airline</div><div class="stat-val" id="d-airline">—</div></div>
+          <div style="grid-column:1/-1"><div class="stat-label">Arriving in (estimate)</div><div class="stat-val" id="d-eta">—</div></div>
         </div>
       </div>
     </div>
@@ -382,6 +381,28 @@
   let latestAircraft = []; // normalized array
   let filterText = '';
   const routeCache = {}; // callsign -> route lookup result, so repeat clicks don't refetch
+
+  // track/route map lines for the currently-selected flight
+  let trackLayer = null;      // real recorded path (solid), when OpenSky has one
+  let estimateLayer = null;   // dashed origin→current, only drawn if no real track exists
+  let projectionLayer = null; // dashed current→destination (always an estimate — we don't know the real route)
+  function clearTrackLayers(){
+    [trackLayer, estimateLayer, projectionLayer].forEach(l => { if(l) map.removeLayer(l); });
+    trackLayer = estimateLayer = projectionLayer = null;
+  }
+
+  function greatCircleNm(lat1, lon1, lat2, lon2){
+    const R = 3440.065; // Earth radius in nautical miles
+    const toRad = d => d*Math.PI/180;
+    const dLat = toRad(lat2-lat1), dLon = toRad(lon2-lon1);
+    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+    return R * 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+  function fmtDuration(hours){
+    const totalMin = Math.round(hours*60);
+    const h = Math.floor(totalMin/60), m = totalMin % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  }
 
   // ---------------- map setup ----------------
   const map = L.map('map', { zoomControl:true, attributionControl:true })
@@ -420,6 +441,10 @@
       const r = REGIONS[key];
       map.setView(r.center, r.zoom);
       drawRings(r.center);
+      selectedHex = null;
+      document.getElementById('detail').classList.remove('open');
+      clearTrackLayers();
+      sidebar.classList.remove('expanded');
       fetchStates();
     };
     regionBar.appendChild(btn);
@@ -559,11 +584,6 @@
     return Math.round(v).toLocaleString() + ' ft';
   }
   function fmtSpeed(kt){ return kt==null ? '—' : Math.round(kt) + ' kt'; }
-  function fmtVrate(fpm){
-    if(fpm==null) return '—';
-    if(Math.abs(fpm) < 60) return 'level';
-    return (fpm>0?'+':'') + Math.round(fpm) + ' fpm';
-  }
 
   function renderPlanes(){
     const seen = new Set();
@@ -632,6 +652,7 @@
   function selectFlight(hex, panTo){
     selectedHex = hex;
     expandSheet();
+    clearTrackLayers();
     const a = latestAircraft.find(x => x.hex === hex);
     renderPlanes();
     renderList();
@@ -643,11 +664,25 @@
     document.getElementById('d-alt').textContent = fmtAlt(a.alt_baro);
     document.getElementById('d-speed').textContent = fmtSpeed(a.gs);
     document.getElementById('d-heading').textContent = a.track!=null ? Math.round(a.track) + '°' : '—';
-    document.getElementById('d-vrate').textContent = fmtVrate(a.baro_rate);
-    document.getElementById('d-squawk').textContent = a.squawk || '—';
     document.getElementById('d-status').textContent = a.alt_baro === 'ground' ? 'on ground' : 'airborne';
+    document.getElementById('d-eta').textContent = '—';
     if(panTo) map.panTo([a.lat, a.lon]);
     lookupRoute((a.flight||'').trim(), hex);
+    fetchTrack(hex);
+  }
+
+  function fetchTrack(hex){
+    fetch(`/api/track?icao24=${encodeURIComponent(hex)}`)
+      .then(r => r.json())
+      .then(data => {
+        if(selectedHex !== hex) return; // user moved on before this resolved
+        if(data && data.found && data.points && data.points.length > 1){
+          if(estimateLayer){ map.removeLayer(estimateLayer); estimateLayer = null; } // real data supersedes the dashed guess
+          if(trackLayer) map.removeLayer(trackLayer);
+          trackLayer = L.polyline(data.points, { color:'#5EEBA5', weight:2.5, opacity:0.85 }).addTo(map);
+        }
+      })
+      .catch(()=>{});
   }
 
   function lookupRoute(callsign, forHex){
@@ -681,9 +716,11 @@
     if(selectedHex !== forHex) return; // user selected something else while this was in flight
     const dRoute = document.getElementById('d-route');
     const dAirline = document.getElementById('d-airline');
+    const dEta = document.getElementById('d-eta');
     if(!data || !data.found || !data.route){
       dRoute.textContent = 'No route data available';
       dAirline.textContent = '—';
+      dEta.textContent = '—';
       return;
     }
     const r = data.route;
@@ -691,6 +728,39 @@
     const destName = r.destination ? (r.destination.iata_code || r.destination.icao_code || r.destination.name) : null;
     dRoute.textContent = (originName && destName) ? `${originName} → ${destName}` : 'No route data available';
     dAirline.textContent = r.airline ? (r.airline.name || '—') : '—';
+
+    const cur = latestAircraft.find(x => x.hex === forHex);
+    if(!cur){ dEta.textContent = '—'; return; }
+
+    // Dashed origin→current line, only as a fallback when no real recorded
+    // track exists — never drawn alongside a real one, and never mistaken
+    // for one (lower opacity + dashed vs. the solid real-track line).
+    if(!trackLayer && r.origin && typeof r.origin.latitude === 'number' && typeof r.origin.longitude === 'number'){
+      if(estimateLayer) map.removeLayer(estimateLayer);
+      estimateLayer = L.polyline(
+        [[r.origin.latitude, r.origin.longitude], [cur.lat, cur.lon]],
+        { color:'#5EEBA5', weight:2, opacity:0.4, dashArray:'2,8' }
+      ).addTo(map);
+    }
+
+    // Dashed current→destination projection — always an estimate (a
+    // straight line, not the real remaining route), labeled as such.
+    if(r.destination && typeof r.destination.latitude === 'number' && typeof r.destination.longitude === 'number'){
+      if(projectionLayer) map.removeLayer(projectionLayer);
+      projectionLayer = L.polyline(
+        [[cur.lat, cur.lon], [r.destination.latitude, r.destination.longitude]],
+        { color:'#FFB347', weight:2, opacity:0.5, dashArray:'2,8' }
+      ).addTo(map);
+
+      if(cur.gs > 0){
+        const distNm = greatCircleNm(cur.lat, cur.lon, r.destination.latitude, r.destination.longitude);
+        dEta.textContent = '~' + fmtDuration(distNm / cur.gs);
+      } else {
+        dEta.textContent = '—';
+      }
+    } else {
+      dEta.textContent = '—';
+    }
   }
 
   document.getElementById('detail-close').onclick = ()=>{
@@ -698,6 +768,8 @@
     document.getElementById('detail').classList.remove('open');
     document.getElementById('d-route').textContent = '—';
     document.getElementById('d-airline').textContent = '—';
+    document.getElementById('d-eta').textContent = '—';
+    clearTrackLayers();
     sidebar.classList.remove('expanded'); // collapse the mobile sheet back down too
     renderPlanes(); renderList();
   };
